@@ -86,69 +86,88 @@ async function searchResults(keyword) {
 }
 
 async function extractDetails(url) {
-  try {
-    var html = await fetchHtml(url);
-    var bootstrapData = parseBootstrapData(html) || {};
-    var titlePage = getTitlePage(bootstrapData);
-    var watchPage = getWatchPage(bootstrapData);
+    try {
+        const response = await request(url);
+        const $ = cheerio.load(response);
 
-    var title =
-      titlePage.title ||
-      (watchPage.video && watchPage.video.title) ||
-      watchPage.title ||
-      {};
+        const title = $('h1.entry-title, .title').text().trim();
+        const cover = $('.poster img, .cover img').attr('src') || '';
+        const description = $('.description, .synopsis').text().trim();
 
-    var genres = extractNames(title.genres);
-    var countries = extractCountryNames(
-      title.production_countries || title.countries
-    );
+        const seasons = [];
 
-    var runtime =
-      title.runtime ||
-      (watchPage.episode && watchPage.episode.runtime) ||
-      "Unknown";
+        // 1. Suche alle Staffel-Blöcke oder Tab-Inhalte
+        const seasonBlocks = $('.season-list, .seasons-wrapper, [data-season]');
 
-    var year =
-      title.year ||
-      extractYear(title.release_date) ||
-      "Unknown";
+        if (seasonBlocks.length > 0) {
+            seasonBlocks.each((i, seasonEl) => {
+                // Bestimme die Staffelnummer
+                const seasonNumber = parseInt($(seasonEl).attr('data-season') || $(seasonEl).find('.season-title').text().replace(/\D/g, '') || (i + 1), 10);
+                
+                const episodes = [];
 
-    var description =
-      cleanupText(title.description) || "No description available";
+                // 2. Extrahiere die Episoden dieser spezifischen Staffel
+                $(seasonEl).find('a.episode, .episodes-list a').each((j, epEl) => {
+                    const epHref = $(epEl).attr('href');
+                    const epTitle = $(epEl).text().trim();
+                    const epNum = parseInt($(epEl).attr('data-episode') || $(epEl).text().replace(/\D/g, '') || (j + 1), 10);
 
-    return JSON.stringify([
-      {
-        title: cleanupText(
-          title.name ||
-            title.title ||
-            (watchPage.video && watchPage.video.title) ||
-            ""
-        ),
-        image: absolutizeUrl(title.poster || title.image || title.backdrop),
-        description: description,
-        aliases: [
-          "Genres: " +
-            (genres.length ? genres.join(", ") : "Unknown"),
-          "Runtime: " + formatRuntime(runtime),
-          "Country: " +
-            (countries.length ? countries.join(", ") : "Unknown")
-        ].join(" | "),
-        airdate: String(year)
-      }
-    ]);
-  } catch (error) {
-    console.log("extractDetails error: " + error.message);
+                    if (epHref) {
+                        episodes.push({
+                            name: epTitle || `Episode ${epNum}`,
+                            url: epHref,
+                            episode: epNum
+                        });
+                    }
+                });
 
-    return JSON.stringify([
-      {
-        description: "Error loading description",
-        aliases:
-          "Genres: Unknown | Runtime: Unknown | Country: Unknown",
-        airdate: "Unknown"
-      }
-    ]);
-  }
+                if (episodes.length > 0) {
+                    seasons.push({
+                        season: seasonNumber,
+                        episodes: episodes
+                    });
+                }
+            });
+        } else {
+            // Fallback: Falls Moflix die Staffeln in separaten Select-Boxen/Tabs ohne Container anzeigt
+            $('.season-btn, .season-select option').each((i, tabEl) => {
+                const seasonNumber = parseInt($(tabEl).attr('data-season') || $(tabEl).val() || (i + 1), 10);
+                const episodes = [];
+
+                $(`.episodes[data-season="${seasonNumber}"] a, .season-${seasonNumber} a`).each((j, epEl) => {
+                    const epHref = $(epEl).attr('href');
+                    if (epHref) {
+                        episodes.push({
+                            name: $(epEl).text().trim() || `Episode ${j + 1}`,
+                            url: epHref,
+                            episode: j + 1
+                        });
+                    }
+                });
+
+                if (episodes.length > 0) {
+                    seasons.push({
+                        season: seasonNumber,
+                        episodes: episodes
+                    });
+                }
+            });
+        }
+
+        // Rückgabe im exakten Format, das Sora erwartet
+        return {
+            title: title,
+            cover: cover,
+            description: description,
+            seasons: seasons
+        };
+
+    } catch (error) {
+        console.error("Error in extractDetails (moflix):", error);
+        return null;
+    }
 }
+
 
 /*
  * Kinoger-style episode output.
