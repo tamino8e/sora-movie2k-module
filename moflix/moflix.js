@@ -1,13 +1,8 @@
 var MOFLIX_BASE_URL = "https://moflix-stream.xyz/";
 
-/**
- * Moflix Resolver / Extractor Module
- * Vollständiges Skript mit Unterverarbeitung aller Staffeln über die Moflix API
- */
-
 
 // ==========================================
-// HILFSFUNKTIONEN
+// HELPER FUNCTIONS
 // ==========================================
 
 function stripHash(url) {
@@ -48,24 +43,14 @@ function padNumber(num) {
   return n < 10 ? "0" + n : "" + n;
 }
 
-function getBaseOrigin(url) {
-  if (MOFLIX_BASE_URL) return MOFLIX_BASE_URL;
-  try {
-    var u = new URL(url);
-    return u.origin;
-  } catch (e) {
-    return "";
-  }
-}
-
-function absolutizeUrl(path, baseUrl) {
+function absolutizeUrl(path) {
   if (!path) return "";
   if (path.indexOf("http://") === 0 || path.indexOf("https://") === 0) {
     return path;
   }
-  var base = baseUrl || MOFLIX_BASE_URL;
-  if (base && base.endsWith("/")) {
-    base = base.slice(0, -1);
+  var base = MOFLIX_BASE_URL || "";
+  if (base.length > 0 && base.charAt(base.length - 1) === "/") {
+    base = base.substring(0, base.length - 1);
   }
   if (path.indexOf("/") !== 0) {
     path = "/" + path;
@@ -73,25 +58,10 @@ function absolutizeUrl(path, baseUrl) {
   return base + path;
 }
 
-async function moflixFetch(url, options) {
-  options = options || {};
-  if (typeof fetch !== "undefined") {
-    return await fetch(url, options);
-  }
-  throw new Error("fetch is not supported in this environment");
-}
-
-async function readResponseText(response) {
-  if (response && typeof response.text === "function") {
-    return await response.text();
-  }
-  return response;
-}
-
 async function fetchHtml(url) {
   var response = await moflixFetch(url, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
     }
   });
@@ -134,16 +104,16 @@ function getMovieVideoId(titlePage) {
 }
 
 // ==========================================
-// API SEASONS FETCH
+// MOFLIX API FETCH FOR EXTRA SEASONS
 // ==========================================
 
-async function fetchSeasonEpisodes(baseUrl, titleId, seasonNumber) {
+async function fetchSeasonEpisodes(titleId, seasonNumber) {
   try {
-    var apiUrl = absolutizeUrl("/api/v1/titles/" + titleId + "/seasons/" + seasonNumber, baseUrl);
+    var apiUrl = absolutizeUrl("/api/v1/titles/" + titleId + "/seasons/" + seasonNumber);
     var response = await moflixFetch(apiUrl, {
       headers: {
         "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
       }
     });
     var text = await readResponseText(response);
@@ -165,18 +135,12 @@ async function fetchSeasonEpisodes(baseUrl, titleId, seasonNumber) {
 }
 
 // ==========================================
-// HAUPTFUNKTIONEN
+// SORA / LUNA MODULE EXPORTS
 // ==========================================
 
-/**
- * Extrahiert alle Episoden (inkl. aller Staffeln) einer Serie oder eines Films.
- * @param {string} url - URL der Serie oder des Films
- */
 async function extractEpisodes(url) {
   try {
     var cleanUrl = stripHash(url);
-    var baseUrl = getBaseOrigin(cleanUrl);
-
     var html = await fetchHtml(cleanUrl);
     var bootstrapData = parseBootstrapData(html) || {};
     var titlePage = getTitlePage(bootstrapData);
@@ -185,7 +149,7 @@ async function extractEpisodes(url) {
 
     var episodes = [];
 
-    // 1. Wenn Staffeln vorhanden sind, jede Staffel einzeln über die API nachladen
+    // 1. Alle Staffeln über Moflix API nachladen
     if (titleId && Array.isArray(title.seasons) && title.seasons.length > 0) {
       for (var s = 0; s < title.seasons.length; s += 1) {
         var seasonObj = title.seasons[s];
@@ -194,13 +158,13 @@ async function extractEpisodes(url) {
         if (seasonObj.episodes && Array.isArray(seasonObj.episodes) && seasonObj.episodes.length > 0) {
           episodes = episodes.concat(seasonObj.episodes);
         } else if (sNum > 0) {
-          var seasonEps = await fetchSeasonEpisodes(baseUrl, titleId, sNum);
+          var seasonEps = await fetchSeasonEpisodes(titleId, sNum);
           episodes = episodes.concat(seasonEps);
         }
       }
     }
 
-    // 2. Fallback: Bootstrap-Daten nutzen (oft nur Staffel 1)
+    // 2. Fallback für initiale Bootstrap-Daten
     if (!episodes.length) {
       episodes =
         titlePage.episodes && Array.isArray(titlePage.episodes.data)
@@ -208,7 +172,7 @@ async function extractEpisodes(url) {
           : [];
     }
 
-    // 3. Fallback: Spielfilm (Movie)
+    // 3. Fallback für Spielfilme
     if (!episodes.length) {
       var movieVideoId = getMovieVideoId(titlePage);
       if (movieVideoId) {
@@ -216,12 +180,12 @@ async function extractEpisodes(url) {
           title: title.name || "Movie",
           season: 0,
           episode: 0,
-          url: absolutizeUrl("/watch/" + movieVideoId, baseUrl)
+          url: absolutizeUrl("/watch/" + movieVideoId)
         }];
       }
     }
 
-    // 4. Episoden in einheitliches Format mappen
+    // 4. Mappen auf das Standardformat des Moduls
     return episodes.map(function (item) {
       var sNum = toNumber(item.season_number);
       var eNum = toNumber(item.episode_number);
@@ -229,7 +193,7 @@ async function extractEpisodes(url) {
       var videoId = (item.primary_video && item.primary_video.id) || item.video_id;
 
       var watchUrl = videoId
-        ? absolutizeUrl("/watch/" + videoId, baseUrl)
+        ? absolutizeUrl("/watch/" + videoId)
         : cleanUrl + "#season=" + sNum + "&episode=" + eNum;
 
       return {
@@ -245,16 +209,10 @@ async function extractEpisodes(url) {
   }
 }
 
-/**
- * Ermittelt die Watch-URL für eine bestimmte Staffel/Episode (z. B. aus hash #season=2&episode=1).
- * @param {string} url - URL inkl. Hash-Parametern
- */
 async function ensureWatchUrl(url) {
   var parts = splitHash(url);
   var cleanUrl = parts.base;
-  var baseUrl = getBaseOrigin(cleanUrl);
 
-  // Falls es schon eine Watch-URL ist
   if (cleanUrl.indexOf("/watch/") !== -1) {
     return cleanUrl;
   }
@@ -275,7 +233,6 @@ async function ensureWatchUrl(url) {
 
   var selectedEpisode = null;
 
-  // Suche in initialen Bootstrap-Daten
   for (var i = 0; i < episodes.length; i += 1) {
     var item = episodes[i];
     if (
@@ -287,9 +244,8 @@ async function ensureWatchUrl(url) {
     }
   }
 
-  // Falls nicht in Bootstrap enthalten, direkt per API nachladen
   if (!selectedEpisode && titleId) {
-    var fetchedSeason = await fetchSeasonEpisodes(baseUrl, titleId, season);
+    var fetchedSeason = await fetchSeasonEpisodes(titleId, season);
     for (var j = 0; j < fetchedSeason.length; j += 1) {
       var sItem = fetchedSeason[j];
       if (toNumber(sItem.episode_number) === episode) {
@@ -301,31 +257,22 @@ async function ensureWatchUrl(url) {
 
   if (selectedEpisode) {
     if (selectedEpisode.primary_video && selectedEpisode.primary_video.id) {
-      return absolutizeUrl("/watch/" + selectedEpisode.primary_video.id, baseUrl);
+      return absolutizeUrl("/watch/" + selectedEpisode.primary_video.id);
     }
     if (selectedEpisode.video && selectedEpisode.video.id) {
-      return absolutizeUrl("/watch/" + selectedEpisode.video.id, baseUrl);
+      return absolutizeUrl("/watch/" + selectedEpisode.video.id);
     }
     if (selectedEpisode.video_id) {
-      return absolutizeUrl("/watch/" + selectedEpisode.video_id, baseUrl);
+      return absolutizeUrl("/watch/" + selectedEpisode.video_id);
     }
   }
 
   console.log("Moflix episode not found: S" + padNumber(season) + "E" + padNumber(episode));
 
-  // Movie Fallback
   var movieVideoId = getMovieVideoId(titlePage);
   if (!movieVideoId) {
     return null;
   }
 
-  return absolutizeUrl("/watch/" + movieVideoId, baseUrl);
-}
-
-// Falls das Skript in einem Node/CommonJS-Umfeld exportiert werden muss:
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = {
-    extractEpisodes: extractEpisodes,
-    ensureWatchUrl: ensureWatchUrl
-  };
+  return absolutizeUrl("/watch/" + movieVideoId);
 }
