@@ -86,70 +86,68 @@ async function searchResults(keyword) {
 }
 
 async function extractDetails(url) {
-    try {
-        const response = await request(url);
-        const $ = cheerio.load(response);
+  try {
+    var html = await fetchHtml(url);
+    var bootstrapData = parseBootstrapData(html) || {};
+    var titlePage = getTitlePage(bootstrapData);
+    var watchPage = getWatchPage(bootstrapData);
 
-        // 1. Original Metadaten & Beschreibung beibehalten
-        const title = $('.film-info .title, h1.heading-name, .movie-info h1').text().trim();
-        const cover = $('.poster img, .film-poster img').attr('src') || $('.poster img').attr('data-src') || '';
-        const description = $('.description, .film-description, .synopsis, #film-description').text().trim();
-        
-        // Weitere Metadaten (falls im Original vorhanden)
-        const year = $('.year, .release-date').text().trim();
-        const rating = $('.rating, .imdb-rating').text().trim();
+    var title =
+      titlePage.title ||
+      (watchPage.video && watchPage.video.title) ||
+      watchPage.title ||
+      {};
 
-        const seasons = [];
+    var genres = extractNames(title.genres);
+    var countries = extractCountryNames(
+      title.production_countries || title.countries
+    );
 
-        // 2. Staffeln wie in kinoger.js extrahieren
-        // Moflix nutzt Staffel-Tabs/Selects (z. B. .season-item, .season-tab oder #season-select)
-        const seasonElements = $('.season-item, .season-tab, #season-select option, [data-season-id]');
+    var runtime =
+      title.runtime ||
+      (watchPage.episode && watchPage.episode.runtime) ||
+      "Unknown";
 
-        if (seasonElements.length > 0) {
-            seasonElements.each((index, el) => {
-                const seasonNumber = $(el).attr('data-season') || $(el).val() || (index + 1);
-                const seasonTitle = $(el).text().trim() || `Staffel ${seasonNumber}`;
-                
-                // Moflix URL oder Data-ID für die jeweilige Staffel
-                let seasonUrl = $(el).attr('href') || $(el).attr('data-url');
-                if (!seasonUrl || seasonUrl === '#') {
-                    seasonUrl = `${url}?season=${seasonNumber}`;
-                }
+    var year =
+      title.year ||
+      extractYear(title.release_date) ||
+      "Unknown";
 
-                seasons.push({
-                    name: seasonTitle,
-                    season: parseInt(seasonNumber, 10),
-                    url: seasonUrl,
-                    type: 'season'
-                });
-            });
-        }
+    var description =
+      cleanupText(title.description) || "No description available";
 
-        // 3. Falls direkt Episoden auf der Seite sind (Fallback oder Einzelstaffel)
-        const episodes = [];
-        $('.episode-item a, .episodes-list a').each((index, el) => {
-            episodes.push({
-                name: $(el).text().trim() || `Episode ${index + 1}`,
-                url: $(el).attr('href'),
-                episode: index + 1
-            });
-        });
+    return JSON.stringify([
+      {
+        title: cleanupText(
+          title.name ||
+            title.title ||
+            (watchPage.video && watchPage.video.title) ||
+            ""
+        ),
+        image: absolutizeUrl(title.poster || title.image || title.backdrop),
+        description: description,
+        aliases: [
+          "Genres: " +
+            (genres.length ? genres.join(", ") : "Unknown"),
+          "Runtime: " + formatRuntime(runtime),
+          "Country: " +
+            (countries.length ? countries.join(", ") : "Unknown")
+        ].join(" | "),
+        airdate: String(year)
+      }
+    ]);
+  } catch (error) {
+    console.log("extractDetails error: " + error.message);
 
-        // 4. Exakte Sora-Rückgabe inklusive aller Original-Felder
-        return {
-            title: title,
-            cover: cover,
-            description: description,
-            year: year,
-            rating: rating,
-            seasons: seasons.length > 0 ? seasons : undefined,
-            episodes: seasons.length === 0 ? episodes : undefined
-        };
-
-    } catch (error) {
-        console.error("Fehler in extractDetails (Moflix):", error);
-        return null;
-    }
+    return JSON.stringify([
+      {
+        description: "Error loading description",
+        aliases:
+          "Genres: Unknown | Runtime: Unknown | Country: Unknown",
+        airdate: "Unknown"
+      }
+    ]);
+  }
 }
 
 
