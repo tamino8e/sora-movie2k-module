@@ -1,5 +1,19 @@
 var MOFLIX_BASE_URL = "https://moflix-stream.xyz/";
 
+function countSeasons(episodes) {
+  var seasons = {};
+
+  for (var i = 0; i < episodes.length; i += 1) {
+    var season = toNumber(episodes[i] && episodes[i].season);
+
+    if (season > 0) {
+      seasons[season] = true;
+    }
+  }
+
+  return Object.keys(seasons).length;
+}
+
 async function searchResults(keyword) {
   try {
     var query = cleanupText(keyword);
@@ -159,94 +173,130 @@ async function extractEpisodes(url) {
     var title = titlePage.title || {};
 
     var episodes =
-      titlePage.episodes &&
-      Array.isArray(titlePage.episodes.data)
+      titlePage.episodes && Array.isArray(titlePage.episodes.data)
         ? titlePage.episodes.data.slice()
         : [];
 
     /*
-     * If Moflix exposes episodes, this is a series.
+     * Movie fallback
      */
-    if (episodes.length) {
-      episodes.sort(function(a, b) {
-        var seasonA = toNumber(a && a.season_number);
-        var seasonB = toNumber(b && b.season_number);
+    if (!episodes.length) {
+      var movieVideoId = getMovieVideoId(titlePage);
 
-        if (seasonA !== seasonB) {
-          return seasonA - seasonB;
-        }
-
-        return (
-          toNumber(a && a.episode_number) -
-          toNumber(b && b.episode_number)
-        );
-      });
-
-      var result = [];
-
-      for (var i = 0; i < episodes.length; i += 1) {
-        var item = episodes[i];
-
-        if (!item) {
-          continue;
-        }
-
-        var season = toNumber(item.season_number);
-        var episode = toNumber(item.episode_number);
-
-        if (!season) {
-          season = 1;
-        }
-
-        if (!episode) {
-          episode = i + 1;
-        }
-
-        /*
-         * Important:
-         * We deliberately do NOT use the Moflix watch URL here.
-         *
-         * Instead the title URL is retained and season/episode
-         * are encoded in the hash, exactly like Kinoger.js.
-         */
-        result.push({
-          href:
-            cleanUrl +
-            "#season=" +
-            season +
-            "&episode=" +
-            episode,
-
-          number: episode,
-
-          title:
-            "S" +
-            padNumber(season) +
-            "E" +
-            padNumber(episode)
-        });
+      if (!movieVideoId) {
+        return JSON.stringify([]);
       }
 
-      return JSON.stringify(result);
+      return JSON.stringify([
+        {
+          href: absolutizeUrl("/watch/" + movieVideoId),
+          number: "Movie",
+          title: "Movie"
+        }
+      ]);
     }
 
     /*
-     * No episodes -> treat as movie.
+     * Nur Episoden mit gültigem Video behalten.
      */
-    var movieVideoId = getMovieVideoId(titlePage);
+    episodes = episodes.filter(function(item) {
+      return (
+        item &&
+        item.primary_video &&
+        item.primary_video.id &&
+        toNumber(item.season_number) >= 1 &&
+        toNumber(item.episode_number) >= 1
+      );
+    });
 
-    if (!movieVideoId) {
-      return JSON.stringify([]);
+    /*
+     * Nach Season und Episode sortieren.
+     */
+    episodes.sort(function(a, b) {
+      var seasonA = toNumber(a.season_number);
+      var seasonB = toNumber(b.season_number);
+
+      if (seasonA !== seasonB) {
+        return seasonA - seasonB;
+      }
+
+      return (
+        toNumber(a.episode_number) -
+        toNumber(b.episode_number)
+      );
+    });
+
+    /*
+     * Kinoger-kompatible Struktur:
+     *
+     *   href:
+     *   /title/...#season=2&episode=4
+     *
+     *   number:
+     *   4
+     *
+     *   title:
+     *   S02E04 - Episodentitel
+     *
+     * Dadurch kann Luna/CloudStream die Episoden
+     * sauber den einzelnen Seasons zuordnen.
+     */
+    var result = [];
+
+    for (var i = 0; i < episodes.length; i += 1) {
+      var item = episodes[i];
+
+      var season = toNumber(item.season_number);
+      var episode = toNumber(item.episode_number);
+
+      if (season < 1 || episode < 1) {
+        continue;
+      }
+
+      var episodeTitle = cleanupText(item.name || "");
+
+      var displayTitle =
+        "S" +
+        padNumber(season) +
+        "E" +
+        padNumber(episode);
+
+      if (episodeTitle) {
+        displayTitle += " - " + episodeTitle;
+      }
+
+      result.push({
+        href:
+          cleanUrl +
+          "#season=" +
+          season +
+          "&episode=" +
+          episode,
+
+        number: episode,
+
+        title: displayTitle,
+
+        season: season,
+
+        episode: episode
+      });
     }
 
-    return JSON.stringify([
-      {
-        href: absolutizeUrl("/watch/" + movieVideoId),
-        number: "Movie"
-      }
-    ]);
+    console.log(
+      "Moflix extractEpisodes: " +
+        result.length +
+        " episodes across " +
+        countSeasons(result) +
+        " season(s)"
+    );
+
+    return JSON.stringify(result);
   } catch (error) {
-    console.log("extractEpisodes error: " + error.message);
+    console.log(
+      "extractEpisodes error: " + error.message
+    );
+
     return JSON.stringify([]);
   }
 }
@@ -271,6 +321,51 @@ async function extractStreamUrl(url) {
 
     var episode =
       toNumber(getHashParam(parts.hash, "episode")) || 1;
+
+    var html = await fetchHtml(parts.base);
+
+    var bootstrapData = parseBootstrapData(html) || {};
+    var titlePage = getTitlePage(bootstrapData);
+    var title = titlePage.title || {};
+
+    var episodes =
+      titlePage.episodes &&
+      Array.isArray(titlePage.episodes.data)
+        ? titlePage.episodes.data
+        : [];
+
+    var selectedEpisode = null;
+
+    for (var i = 0; i < episodes.length; i += 1) {
+      var item = episodes[i];
+
+      if (
+        toNumber(item.season_number) === season &&
+        toNumber(item.episode_number) === episode
+      ) {
+        selectedEpisode = item;
+        break;
+      }
+    }
+
+    if (
+      !selectedEpisode ||
+      !selectedEpisode.primary_video ||
+      !selectedEpisode.primary_video.id
+    ) {
+      console.log(
+        "Moflix episode not found: S" +
+          padNumber(season) +
+          "E" +
+          padNumber(episode)
+      );
+
+      return null;
+    }
+
+    var watchUrl = absolutizeUrl(
+      "/watch/" + selectedEpisode.primary_video.id
+    );
 
     /*
      * ensureWatchUrl() now understands the hash and resolves
