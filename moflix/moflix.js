@@ -90,80 +90,64 @@ async function extractDetails(url) {
         const response = await request(url);
         const $ = cheerio.load(response);
 
-        const title = $('h1.entry-title, .title').text().trim();
-        const cover = $('.poster img, .cover img').attr('src') || '';
-        const description = $('.description, .synopsis').text().trim();
+        // 1. Original Metadaten & Beschreibung beibehalten
+        const title = $('.film-info .title, h1.heading-name, .movie-info h1').text().trim();
+        const cover = $('.poster img, .film-poster img').attr('src') || $('.poster img').attr('data-src') || '';
+        const description = $('.description, .film-description, .synopsis, #film-description').text().trim();
+        
+        // Weitere Metadaten (falls im Original vorhanden)
+        const year = $('.year, .release-date').text().trim();
+        const rating = $('.rating, .imdb-rating').text().trim();
 
         const seasons = [];
 
-        // 1. Suche alle Staffel-Blöcke oder Tab-Inhalte
-        const seasonBlocks = $('.season-list, .seasons-wrapper, [data-season]');
+        // 2. Staffeln wie in kinoger.js extrahieren
+        // Moflix nutzt Staffel-Tabs/Selects (z. B. .season-item, .season-tab oder #season-select)
+        const seasonElements = $('.season-item, .season-tab, #season-select option, [data-season-id]');
 
-        if (seasonBlocks.length > 0) {
-            seasonBlocks.each((i, seasonEl) => {
-                // Bestimme die Staffelnummer
-                const seasonNumber = parseInt($(seasonEl).attr('data-season') || $(seasonEl).find('.season-title').text().replace(/\D/g, '') || (i + 1), 10);
+        if (seasonElements.length > 0) {
+            seasonElements.each((index, el) => {
+                const seasonNumber = $(el).attr('data-season') || $(el).val() || (index + 1);
+                const seasonTitle = $(el).text().trim() || `Staffel ${seasonNumber}`;
                 
-                const episodes = [];
-
-                // 2. Extrahiere die Episoden dieser spezifischen Staffel
-                $(seasonEl).find('a.episode, .episodes-list a').each((j, epEl) => {
-                    const epHref = $(epEl).attr('href');
-                    const epTitle = $(epEl).text().trim();
-                    const epNum = parseInt($(epEl).attr('data-episode') || $(epEl).text().replace(/\D/g, '') || (j + 1), 10);
-
-                    if (epHref) {
-                        episodes.push({
-                            name: epTitle || `Episode ${epNum}`,
-                            url: epHref,
-                            episode: epNum
-                        });
-                    }
-                });
-
-                if (episodes.length > 0) {
-                    seasons.push({
-                        season: seasonNumber,
-                        episodes: episodes
-                    });
+                // Moflix URL oder Data-ID für die jeweilige Staffel
+                let seasonUrl = $(el).attr('href') || $(el).attr('data-url');
+                if (!seasonUrl || seasonUrl === '#') {
+                    seasonUrl = `${url}?season=${seasonNumber}`;
                 }
-            });
-        } else {
-            // Fallback: Falls Moflix die Staffeln in separaten Select-Boxen/Tabs ohne Container anzeigt
-            $('.season-btn, .season-select option').each((i, tabEl) => {
-                const seasonNumber = parseInt($(tabEl).attr('data-season') || $(tabEl).val() || (i + 1), 10);
-                const episodes = [];
 
-                $(`.episodes[data-season="${seasonNumber}"] a, .season-${seasonNumber} a`).each((j, epEl) => {
-                    const epHref = $(epEl).attr('href');
-                    if (epHref) {
-                        episodes.push({
-                            name: $(epEl).text().trim() || `Episode ${j + 1}`,
-                            url: epHref,
-                            episode: j + 1
-                        });
-                    }
+                seasons.push({
+                    name: seasonTitle,
+                    season: parseInt(seasonNumber, 10),
+                    url: seasonUrl,
+                    type: 'season'
                 });
-
-                if (episodes.length > 0) {
-                    seasons.push({
-                        season: seasonNumber,
-                        episodes: episodes
-                    });
-                }
             });
         }
 
-        // Rückgabe im exakten Format, das Sora erwartet
+        // 3. Falls direkt Episoden auf der Seite sind (Fallback oder Einzelstaffel)
+        const episodes = [];
+        $('.episode-item a, .episodes-list a').each((index, el) => {
+            episodes.push({
+                name: $(el).text().trim() || `Episode ${index + 1}`,
+                url: $(el).attr('href'),
+                episode: index + 1
+            });
+        });
+
+        // 4. Exakte Sora-Rückgabe inklusive aller Original-Felder
         return {
             title: title,
             cover: cover,
             description: description,
-            seasons: seasons
+            year: year,
+            rating: rating,
+            seasons: seasons.length > 0 ? seasons : undefined,
+            episodes: seasons.length === 0 ? episodes : undefined
         };
 
     } catch (error) {
-        console.error("Error in extractDetails (moflix):", error);
+        console.error("Fehler in extractDetails (Moflix):", error);
         return null;
     }
 }
