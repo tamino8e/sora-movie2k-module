@@ -894,8 +894,8 @@ async function kinogerFetch(url, options) {
   } catch (error) {}
 
   try {
-    if (typeof fetchv2 === "function") {
-      var lunaResponse = await fetchv2(
+    if (typeof soraFetch === "function") {
+      var lunaResponse = await soraFetch(
         url,
         requestOptions.headers,
         requestOptions.method,
@@ -908,15 +908,15 @@ async function kinogerFetch(url, options) {
       }
     }
   } catch (error) {
-    console.log("kinogerFetch fetchv2 luna-style error: " + error.message);
+    console.log("kinogerFetch soraFetch luna-style error: " + error.message);
   }
 
   try {
-    if (typeof fetchv2 === "function") {
-      return await fetchv2(url, requestOptions);
+    if (typeof soraFetch === "function") {
+      return await soraFetch(url, requestOptions);
     }
   } catch (error) {
-    console.log("kinogerFetch fetchv2 options-style error: " + error.message);
+    console.log("kinogerFetch soraFetch options-style error: " + error.message);
   }
 
   try {
@@ -1206,4 +1206,17 @@ function matchFirst(value, regex, groupIndex) {
 
 function escapeRegex(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function soraFetch(url, options = { headers: {}, method: 'GET', body: null }) {
+    try {
+        return await fetchv2(url, options.headers ?? {}, options.method ?? 'GET', options.body ?? null);
+    } catch(e) {
+        try {
+            return await fetch(url, options);
+        } catch(error) {
+            await console.log('soraFetch error: ' + error.message);
+            return null;
+        }
+    }
 }
