@@ -10,9 +10,9 @@
     "language": "German",
     "streamType": "HLS",
     "quality": "1080p",
-    "baseUrl": "https://kinoger.com/",
-    "searchBaseUrl": "https://kinoger.com/?do=search&subaction=search&story=%s",
-    "scriptUrl": "https://git.luna-app.eu/ibro/services/raw/branch/main/kinoger/kinoger.js",
+    "baseUrl": "https://kinoger.ch/",
+    "searchBaseUrl": "https://kinoger.ch/?do=search&subaction=search&story=%s",
+    "scriptUrl": "https://raw.githubusercontent.com/tamino8e/sora-movie2k-module/refs/heads/main/kinogeribro/kinoger.js",
     "type": "movies",
     "asyncJS": true,
     "softsub": true
