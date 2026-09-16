@@ -1,5 +1,5 @@
 // async function searchResults(keyword) {
-//     const url = `https://kinoger.com/?do=search&subaction=search&story=${keyword}`;
+//     const url = `https://kinoger.ch/?do=search&subaction=search&story=${keyword}`;
 //     const response = await soraFetch(url);
 //     const html = await response.text();
 
@@ -9,9 +9,9 @@
 
 //     let match;
 //     while ((match = filmListRegex.exec(html)) !== null) {
-//         const href = match[1].startsWith('http') ? match[1] : `https://kinoger.com${match[1]}`;
+//         const href = match[1].startsWith('http') ? match[1] : `https://kinoger.ch${match[1]}`;
 //         const title = match[2].trim();
-//         const image = match[3].startsWith('http') ? match[3] : `https://kinoger.com${match[3]}`;
+//         const image = match[3].startsWith('http') ? match[3] : `https://kinoger.ch${match[3]}`;
 
 //         results.push({
 //             title,
@@ -25,7 +25,7 @@
 // }
 
 async function searchResults(keyword) {
-    const url = `https://kinoger.com/?do=search&subaction=search&story=${encodeURIComponent(keyword)}`;
+    const url = `https://kinoger.ch/?do=search&subaction=search&story=${encodeURIComponent(keyword)}`;
     const response = await soraFetch(url);
     const html = await response.text();
 
@@ -40,7 +40,7 @@ async function searchResults(keyword) {
         if (!linkMatch) continue;
 
         const hrefRaw = linkMatch[1].trim();
-        const href = hrefRaw.startsWith('http') ? hrefRaw : `https://kinoger.com${hrefRaw}`;
+        const href = hrefRaw.startsWith('http') ? hrefRaw : `https://kinoger.ch${hrefRaw}`;
 
         let title = linkMatch[2].trim();
         title = decodeHtmlEntities(title);
@@ -65,7 +65,7 @@ async function searchResults(keyword) {
             }
         }
 
-        if (image && !image.startsWith('http')) image = `https://kinoger.com${image}`;
+        if (image && !image.startsWith('http')) image = `https://kinoger.ch${image}`;
 
         results.push({ title, image, href });
     }
@@ -75,15 +75,15 @@ async function searchResults(keyword) {
 }
 
 // searchResults("interstellar");
-// extractDetails("https://kinoger.com/stream/1274-interstellar-2014.html");
-// extractEpisodes("https://kinoger.com/stream/1274-interstellar-2014.html");
+// extractDetails("https://kinoger.ch/stream/1274-interstellar-2014.html");
+// extractEpisodes("https://kinoger.ch/stream/1274-interstellar-2014.html");
 // extractStreamUrl("https://supervideo.cc/k/ej2l1x8jr7l0");
 
 // searchResults("squid game");
-// extractDetails("https://kinoger.com/stream/9719-squid-game-staffel-1-stream.html");
-// extractEpisodes("https://kinoger.com/stream/9719-squid-game-staffel-1-stream.html");
+// extractDetails("https://kinoger.ch/stream/9719-squid-game-staffel-1-stream.html");
+// extractEpisodes("https://kinoger.ch/stream/9719-squid-game-staffel-1-stream.html");
 
-// extractEpisodes("https://kinoger.com/stream/2267-breaking-bad-staffel-01-05-2013.html");
+// extractEpisodes("https://kinoger.ch/stream/2267-breaking-bad-staffel-01-05-2013.html");
 
 async function extractDetails(url) {
     const response = await soraFetch(url);
